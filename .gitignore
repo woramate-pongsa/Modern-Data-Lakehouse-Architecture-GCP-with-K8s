@@ -1,0 +1,28 @@
+# === GCP Credentials ===
+# This is your main service account key. NEVER push this.
+terraform-key.json
+
+# === Terraform Files ===
+# These contain infrastructure metadata and sometimes plain-text secrets.
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+# Contains your specific project_id and region.
+terraform.tfvars
+terraform/terraform.tfvars
+
+# === Logs & Temporary Files ===
+# Simulation traffic and execution logs.
+simulation.log
+*.log
+# Python bytecode and environment.
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+
+# === OS Specific ===
+.DS_Store
+Thumbs.db

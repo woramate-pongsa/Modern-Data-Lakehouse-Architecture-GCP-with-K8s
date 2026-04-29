@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-api
+  labels:
+    app: ingestion-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ingestion-api
+  template:
+    metadata:
+      labels:
+        app: ingestion-api
+    spec:
+      serviceAccountName: ingestion-api-sa
+      containers:
+      - name: ingestion-api
+        image: asia-southeast1-docker.pkg.dev/my-project-lakehouse-k8s/data-platform-repo/ingestion-api:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: BRONZE_BUCKET_NAME
+          value: "my-project-lakehouse-k8s-lake-bronze"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion-api-service
+spec:
+  selector:
+    app: ingestion-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: LoadBalancer

@@ -1,0 +1,91 @@
+================================================================================
+สถาปัตยกรรม Modern Data Lakehouse บน GCP ด้วย Kubernetes (GKE)
+================================================================================
+
+โปรเจกต์นี้คือการสร้างระบบ "Data Lakehouse" ที่ทันสมัยบน Google Cloud Platform (GCP) 
+โดยเน้นการทำงานแบบอัตโนมัติ (Automation), การขยายตัวได้ (Scalability) และความปลอดภัย (Security)
+
+---
+1. ภาพรวมของสถาปัตยกรรม (Architecture Overview)
+---
+ระบบถูกแบ่งออกเป็น 5 เลเยอร์หลักตามแนวคิด Medallion Architecture:
+
+[แหล่งข้อมูล] -> [Ingestion API (GKE)] -> [Bronze (Raw)] -> [Silver (Clean)] -> [Gold (Aggregated)] -> [BigQuery / BI]
+
+- Ingestion: ใช้ FastAPI รันบน GKE Autopilot เพื่อรับข้อมูล JSON และบันทึกลง GCS ทันที
+- Storage: ใช้ Google Cloud Storage (GCS) แบ่งเป็น 3 Buckets (Bronze, Silver, Gold)
+- Processing: ใช้ Apache Spark (PySpark) ในการแปลงข้อมูลระหว่างเลเยอร์
+- Orchestration: ใช้ Apache Airflow ในการควบคุมลำดับการทำงาน (Pipeline)
+- Analytics: ใช้ BigQuery เชื่อมต่อกับ GCS Gold Layer แบบ External Table
+
+---
+2. รายละเอียดส่วนประกอบ (Component Breakdown)
+---
+
+A. Infrastructure as Code (Terraform)
+   - ไฟล์: terraform/main.tf
+   - ทำหน้าที่: สร้างทรัพยากรทั้งหมดบน GCP อัตโนมัติ (GCS, GKE, Artifact Registry)
+   - แนวคิด: การใช้ Terraform ช่วยให้เราสร้างระบบที่เหมือนเดิมซ้ำได้ (Reproducibility) และจัดการทรัพยากรได้ง่าย
+
+B. Ingestion Layer (FastAPI & Docker)
+   - ไฟล์: ingestion-api/main.py
+   - ทำหน้าที่: เป็นด่านหน้า (Entry Point) รับข้อมูลผ่าน HTTP POST 
+   - แนวคิด: FastAPI มีประสิทธิภาพสูงและเขียนง่าย เราแพ็กมันลง Docker เพื่อให้นำไปรันบน Kubernetes ได้อย่างราบรื่น
+
+C. Kubernetes (GKE Autopilot)
+   - ไฟล์: ingestion-api/k8s/k8s-manifest.yaml
+   - ทำหน้าที่: บริหารจัดการ Container ของ API ให้รันอยู่ตลอดเวลาและขยายตัว (Scale) อัตโนมัติ
+   - แนวคิด: เราเลือกใช้ Autopilot เพื่อลดภาระในการดูแล Server (Serverless Experience) 
+
+D. Medallion Architecture (Data Layers)
+   - Bronze: เก็บข้อมูลดิบ (Raw JSON) ที่ส่งมาจาก API ไม่มีการแก้ไขใดๆ เพื่อใช้เป็น Backup
+   - Silver: ข้อมูลที่ผ่านการกรอง (Filter), เปลี่ยน Data Type และทำความสะอาด (Clean) แล้ว
+   - Gold: ข้อมูลที่ผ่านการคำนวณสรุปผล (Aggregation) พร้อมสำหรับงาน Business Intelligence (BI)
+
+---
+3. แนวคิดสำคัญและความปลอดภัย (Key Concepts & Security)
+---
+
+- Workload Identity (สำคัญมาก): 
+  ในสมัยก่อนเรามักจะใส่ "Service Account Key (JSON)" ไว้ใน Pod ซึ่งไม่ปลอดภัย 
+  ในโปรเจกต์นี้เราใช้ Workload Identity เพื่อผูก "Kubernetes Service Account" เข้ากับ "GCP Service Account" โดยตรง 
+  ทำให้ Pod สามารถเขียนไฟล์ลง GCS ได้โดยไม่ต้องมีไฟล์ Key อยู่ภายใน Pod เลย
+
+- Medallion Architecture: 
+  ช่วยให้เรามั่นใจว่าข้อมูลมีความถูกต้อง (Data Integrity) หากเกิดข้อผิดพลาดในการคำนวณใน Silver/Gold 
+  เราสามารถย้อนกลับไปรันใหม่จาก Bronze (Raw Data) ได้เสมอ
+
+---
+4. วิธีคิดและการวางแผนของระบบ (Thinking Process)
+---
+
+ในการสร้างโปรเจกต์นี้ ผมคิดตามลำดับความสำคัญดังนี้:
+
+1. เริ่มจากรากฐาน (Foundation): 
+   ต้องมีระบบจัดการ Permission (IAM) และ API ที่ถูกต้องก่อน (Phase 0)
+
+2. สร้างโครงสร้างพื้นฐาน (IaC): 
+   แทนที่จะคลิกสร้างทีละอย่างในหน้า Console ผมเลือกใช้ Terraform เพื่อสร้างมาตรฐานและป้องกันความผิดพลาดจากคน (Human Error)
+
+3. สร้างทางเข้าของข้อมูล (Data Entry): 
+   สร้าง API ที่เบาและเร็ว (FastAPI) เพื่อรองรับข้อมูลจำนวนมากที่ส่งมาพร้อมกัน
+
+4. เชื่อมต่อความปลอดภัย (Seamless Security): 
+   ตั้งค่า Workload Identity ทันทีหลังสร้าง Cluster เพื่อให้ระบบพร้อมทำงานจริงตามมาตรฐาน Enterprise
+
+5. การประมวลผลแบบ Batch: 
+   เตรียม PySpark ไว้ล่วงหน้า เพราะในโลกของ Data Lakehouse ข้อมูลมีปริมาณมหาศาล 
+   Spark คือเครื่องมือที่เหมาะสมที่สุดในการจัดการข้อมูลระดับ Terabyte
+
+---
+5. สรุปไฟล์สำคัญในโปรเจกต์
+---
+- setup_env.sh: สคริปต์เตรียมเครื่องมือและสิทธิ์การเข้าถึง GCP
+- terraform/: โค้ดสำหรับสร้าง Cloud Infrastructure
+- ingestion-api/: โค้ดของ API และการตั้งค่าบน Kubernetes
+- data-simulation/: สคริปต์จำลองพฤติกรรมผู้ใช้เพื่อสร้างข้อมูลทดสอบ
+- spark-jobs/: สคริปต์ PySpark สำหรับการประมวลผลข้อมูล (ETL)
+- airflow-dags/: ไฟล์สำหรับควบคุมตารางเวลาและลำดับการรัน Spark
+
+================================================================================
+จบเอกสารสถาปัตยกรรม - หากมีข้อสงสัยส่วนไหน สอบถามผมได้ทันทีครับ!
